@@ -1419,8 +1419,14 @@
     tile.type = "button";
     tile.className = "browser-texture-tile" + (item.texturePath === state.selectedComponentTexturePath ? " active" : "");
     tile.title = item.texturePath;
-    tile.addEventListener("click", function () {
+    tile.addEventListener("mousedown", function (event) {
+      event.preventDefault();
+    });
+    tile.addEventListener("click", function (event) {
+      event.preventDefault();
+      const scrollState = readTextureBrowserScrollState();
       selectComponentTextureItem(item.texturePath);
+      restoreTextureBrowserScrollState(scrollState);
     });
     state.componentTextureTileMap.set(item.texturePath, tile);
 
@@ -1456,6 +1462,41 @@
     updateTextureBrowserTileClass(previousPath, false);
     updateTextureBrowserTileClass(texturePath, true);
     renderTextureBrowserDetail();
+  }
+
+  /**
+   * 读取贴图阅览相关滚动位置。
+   */
+  function readTextureBrowserScrollState() {
+    const scrollingElement = document.scrollingElement || document.documentElement;
+    return {
+      gridTop: elements.browserTextureGrid.scrollTop,
+      browserTop: elements.textureBrowser.scrollTop,
+      pageTop: scrollingElement.scrollTop
+    };
+  }
+
+  /**
+   * 恢复贴图阅览相关滚动位置。
+   */
+  function restoreTextureBrowserScrollState(scrollState) {
+    applyTextureBrowserScrollState(scrollState);
+    window.requestAnimationFrame(function () {
+      applyTextureBrowserScrollState(scrollState);
+      window.requestAnimationFrame(function () {
+        applyTextureBrowserScrollState(scrollState);
+      });
+    });
+  }
+
+  /**
+   * 应用贴图阅览滚动位置。
+   */
+  function applyTextureBrowserScrollState(scrollState) {
+    const scrollingElement = document.scrollingElement || document.documentElement;
+    elements.browserTextureGrid.scrollTop = scrollState.gridTop;
+    elements.textureBrowser.scrollTop = scrollState.browserTop;
+    scrollingElement.scrollTop = scrollState.pageTop;
   }
 
   /**
