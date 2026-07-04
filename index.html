@@ -11,7 +11,7 @@
     <header class="topbar">
       <div>
         <div class="title-row">
-          <button id="textureBrowserBtn" type="button" class="ghost view-switch" title="阅览当前 easycore组件 中已有的全部 textures/items 贴图">贴图阅览</button>
+          <button id="textureBrowserBtn" type="button" class="ghost view-switch" title="阅览当前 easycore组件 中能从行为包反查到 java_identifier 的生效贴图物品">当前生效贴图物品阅览</button>
           <h1>EasyCore 物品生成器</h1>
         </div>
         <p id="folderStatus">未选择组件目录</p>
@@ -131,7 +131,7 @@
     <main id="textureBrowser" class="texture-browser" hidden>
       <section class="panel texture-browser-list-panel">
         <div class="panel-head">
-          <h2>组件贴图</h2>
+          <h2>当前生效贴图物品</h2>
           <span id="browserTextureCount">0</span>
         </div>
         <div id="browserTextureGrid" class="browser-texture-grid"></div>
@@ -139,11 +139,11 @@
 
       <section class="panel texture-browser-detail-panel">
         <div class="panel-head">
-          <h2>贴图详情</h2>
+          <h2>物品详情</h2>
           <button id="editorViewBtn" type="button" class="ghost" title="返回物品生成编辑界面">返回编辑</button>
         </div>
 
-        <div id="browserEmpty" class="empty-state">请选择一张组件贴图</div>
+        <div id="browserEmpty" class="empty-state">请选择一个生效贴图物品</div>
         <div id="browserDetail" class="browser-detail" hidden>
           <div class="browser-preview-wrap">
             <img id="browserPreviewImage" alt="">
@@ -168,7 +168,7 @@
           </div>
           <div class="browser-output-head">
             <h3>NeigeItems 示例</h3>
-            <button id="copyBrowserNeigeBtn" type="button" title="复制当前贴图对应的 NeigeItems 示例配置">复制 NeigeItems</button>
+            <button id="copyBrowserNeigeBtn" type="button" title="复制当前生效贴图物品对应的 NeigeItems 示例配置">复制 NeigeItems</button>
           </div>
           <pre id="browserNeigePreview" class="browser-neige-preview"></pre>
         </div>
@@ -178,6 +178,6 @@
 
   <script src="./java_identifier_mapping.js"></script>
   <script src="./java_identifier_textures.js"></script>
-  <script src="./app.js?v=20260705-texture-browser"></script>
+  <script src="./app.js?v=20260705-active-texture-browser"></script>
 </body>
 </html>

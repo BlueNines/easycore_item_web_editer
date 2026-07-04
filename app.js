@@ -64,6 +64,8 @@
     componentTextureHashes: new Map(),
     componentTextureFileCount: 0,
     componentTextureItems: [],
+    componentTextureGridDirty: true,
+    componentTextureTileMap: new Map(),
     selectedComponentTexturePath: "",
     componentItemMaxNumber: 0,
     componentItemMaxLoaded: false,
@@ -130,12 +132,14 @@
       state.componentTextureHashes = textureIndex.hashes;
       state.componentTextureFileCount = textureIndex.fileCount;
       state.componentTextureItems = textureIndex.browserItems;
+      state.componentTextureGridDirty = true;
+      state.componentTextureTileMap = new Map();
       state.selectedComponentTexturePath = textureIndex.browserItems.length > 0 ? textureIndex.browserItems[0].texturePath : "";
       state.componentItemMaxNumber = componentItemMaxNumber;
       state.componentItemMaxLoaded = true;
       renderAll();
       setStatus(
-        "组件目录已读取，已载入 " + textureIndex.fileCount + " 张 textures/items 现有贴图用于像素去重，默认物品编号将从 item_" + (componentItemMaxNumber + 1) + " 开始。",
+        "组件目录已读取，已载入 " + textureIndex.fileCount + " 张 textures/items 现有贴图用于像素去重，当前生效贴图物品 " + textureIndex.browserItems.length + " 个，默认物品编号将从 item_" + (componentItemMaxNumber + 1) + " 开始。",
         textureIndex.warnings.length > 0 ? "warn" : "ok"
       );
     } catch (error) {
@@ -1319,7 +1323,7 @@
   function renderFolderStatus() {
     if (state.componentDirectoryName) {
       elements.folderStatus.textContent = "已选择只读目录：" + state.componentDirectoryName
-        + "（已载入 " + state.componentTextureFileCount + " 张现有贴图）";
+        + "（已载入 " + state.componentTextureFileCount + " 张现有贴图，" + state.componentTextureItems.length + " 个生效贴图物品）";
       return;
     }
     elements.folderStatus.textContent = typeof window.showDirectoryPicker === "function"
@@ -1380,6 +1384,12 @@
    * 渲染组件贴图网格。
    */
   function renderTextureBrowserGrid() {
+    if (!state.componentTextureGridDirty) {
+      updateTextureBrowserActiveTile();
+      return;
+    }
+    state.componentTextureGridDirty = false;
+    state.componentTextureTileMap = new Map();
     elements.browserTextureGrid.innerHTML = "";
     if (!isEditorUnlocked()) {
       const locked = document.createElement("div");
@@ -1391,13 +1401,14 @@
     if (state.componentTextureItems.length === 0) {
       const empty = document.createElement("div");
       empty.className = "browser-grid-empty";
-      empty.textContent = "没有找到 textures/items 下的 PNG 贴图";
+      empty.textContent = "没有找到能从 netease_items_beh 反查到 java_identifier 的贴图物品";
       elements.browserTextureGrid.appendChild(empty);
       return;
     }
     state.componentTextureItems.forEach(function (item) {
       elements.browserTextureGrid.appendChild(createTextureBrowserTile(item));
     });
+    updateTextureBrowserActiveTile();
   }
 
   /**
@@ -1409,9 +1420,9 @@
     tile.className = "browser-texture-tile" + (item.texturePath === state.selectedComponentTexturePath ? " active" : "");
     tile.title = item.texturePath;
     tile.addEventListener("click", function () {
-      state.selectedComponentTexturePath = item.texturePath;
-      renderTextureBrowser();
+      selectComponentTextureItem(item.texturePath);
     });
+    state.componentTextureTileMap.set(item.texturePath, tile);
 
     const imageWrap = document.createElement("span");
     imageWrap.className = "browser-texture-thumb";
@@ -1437,6 +1448,37 @@
   }
 
   /**
+   * 选择组件贴图，只刷新选中态和详情。
+   */
+  function selectComponentTextureItem(texturePath) {
+    const previousPath = state.selectedComponentTexturePath;
+    state.selectedComponentTexturePath = texturePath;
+    updateTextureBrowserTileClass(previousPath, false);
+    updateTextureBrowserTileClass(texturePath, true);
+    renderTextureBrowserDetail();
+  }
+
+  /**
+   * 根据当前选择同步网格选中态。
+   */
+  function updateTextureBrowserActiveTile() {
+    state.componentTextureTileMap.forEach(function (tile, texturePath) {
+      tile.classList.toggle("active", texturePath === state.selectedComponentTexturePath);
+    });
+  }
+
+  /**
+   * 更新单个贴图按钮的选中态。
+   */
+  function updateTextureBrowserTileClass(texturePath, active) {
+    const tile = state.componentTextureTileMap.get(texturePath);
+    if (tile == null) {
+      return;
+    }
+    tile.classList.toggle("active", active);
+  }
+
+  /**
    * 渲染组件贴图详情。
    */
   function renderTextureBrowserDetail() {
@@ -1444,7 +1486,7 @@
     elements.browserDetail.hidden = item == null;
     elements.browserEmpty.hidden = item != null;
     if (item == null) {
-      elements.browserEmpty.textContent = isEditorUnlocked() ? "请选择一张组件贴图" : "请先选择 easycore组件";
+      elements.browserEmpty.textContent = isEditorUnlocked() ? "请选择一个生效贴图物品" : "请先选择 easycore组件";
       elements.copyBrowserNeigeBtn.disabled = true;
       return;
     }
@@ -1851,7 +1893,10 @@
       }
       addComponentTextureRecord(result.hashes, makeComponentTextureRecord(entry.relativeParts, textureHash, identifierMap));
       if (includeBrowserItems) {
-        result.browserItems.push(makeComponentTextureBrowserItem(entry.relativeParts, file, identifierMap, javaIdentifierMap));
+        const browserItem = makeComponentTextureBrowserItem(entry.relativeParts, file, identifierMap, javaIdentifierMap);
+        if (browserItem != null) {
+          result.browserItems.push(browserItem);
+        }
       }
       result.fileCount += 1;
     }
@@ -1866,6 +1911,9 @@
     const texturePath = getTexturePathFromRelativeParts(relativeParts);
     const identifier = identifierMap.get(texturePath) || "";
     const javaIdentifier = identifier ? javaIdentifierMap.get(identifier) || "" : "";
+    if (!javaIdentifier) {
+      return null;
+    }
     const material = javaIdentifier ? getMaterialMap()[javaIdentifier] : null;
     return {
       objectUrl: URL.createObjectURL(file),
@@ -2854,6 +2902,8 @@
       }
     });
     state.componentTextureItems = [];
+    state.componentTextureGridDirty = true;
+    state.componentTextureTileMap = new Map();
     state.selectedComponentTexturePath = "";
   }
 

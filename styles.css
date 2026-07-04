@@ -111,10 +111,12 @@ button:disabled {
 
 .view-switch {
   flex: 0 0 auto;
-  padding: 6px 10px;
+  min-height: 42px;
+  padding: 10px 14px;
   color: var(--accent-strong);
   background: #eef8fb;
-  font-size: 14px;
+  font-size: 16px;
+  border-width: 2px;
 }
 
 .topbar p {
