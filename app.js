@@ -15,7 +15,10 @@
   const elements = {
     entryGate: document.getElementById("entryGate"),
     workspace: document.getElementById("workspace"),
+    textureBrowser: document.getElementById("textureBrowser"),
     folderStatus: document.getElementById("folderStatus"),
+    textureBrowserBtn: document.getElementById("textureBrowserBtn"),
+    editorViewBtn: document.getElementById("editorViewBtn"),
     pickFolderBtn: document.getElementById("pickFolderBtn"),
     importLegacyBtn: document.getElementById("importLegacyBtn"),
     addBlankBtn: document.getElementById("addBlankBtn"),
@@ -38,16 +41,30 @@
     validationBox: document.getElementById("validationBox"),
     outputPreview: document.getElementById("outputPreview"),
     downloadList: document.getElementById("downloadList"),
-    copyNeigeBtn: document.getElementById("copyNeigeBtn")
+    copyNeigeBtn: document.getElementById("copyNeigeBtn"),
+    browserTextureCount: document.getElementById("browserTextureCount"),
+    browserTextureGrid: document.getElementById("browserTextureGrid"),
+    browserEmpty: document.getElementById("browserEmpty"),
+    browserDetail: document.getElementById("browserDetail"),
+    browserPreviewImage: document.getElementById("browserPreviewImage"),
+    browserTexturePath: document.getElementById("browserTexturePath"),
+    browserIdentifier: document.getElementById("browserIdentifier"),
+    browserJavaIdentifier: document.getElementById("browserJavaIdentifier"),
+    browserMaterial: document.getElementById("browserMaterial"),
+    browserNeigePreview: document.getElementById("browserNeigePreview"),
+    copyBrowserNeigeBtn: document.getElementById("copyBrowserNeigeBtn")
   };
 
   const state = {
+    viewMode: "editor",
     items: [],
     selectedId: "",
     componentDirectory: null,
     componentDirectoryName: "",
     componentTextureHashes: new Map(),
     componentTextureFileCount: 0,
+    componentTextureItems: [],
+    selectedComponentTexturePath: "",
     componentItemMaxNumber: 0,
     componentItemMaxLoaded: false,
     outputTab: "neige",
@@ -69,6 +86,8 @@
    * 绑定页面上的全部交互事件。
    */
   function bindEvents() {
+    elements.textureBrowserBtn.addEventListener("click", handleShowTextureBrowser);
+    elements.editorViewBtn.addEventListener("click", handleShowEditor);
     elements.pickFolderBtn.addEventListener("click", handlePickFolder);
     elements.importLegacyBtn.addEventListener("click", handleImportLegacyConfig);
     elements.addBlankBtn.addEventListener("click", handleAddBlankItem);
@@ -85,6 +104,7 @@
     elements.identifierInput.addEventListener("input", handleEditorInput);
     elements.javaIdentifierInput.addEventListener("input", handleJavaIdentifierInput);
     elements.copyNeigeBtn.addEventListener("click", handleCopyOutput);
+    elements.copyBrowserNeigeBtn.addEventListener("click", handleCopyBrowserNeige);
     document.querySelectorAll("[data-output-tab]").forEach(function (button) {
       button.addEventListener("click", handleOutputTabClick);
     });
@@ -102,12 +122,15 @@
       const handle = await window.showDirectoryPicker({ mode: "read" });
       elements.folderStatus.textContent = "正在读取组件已有贴图：" + handle.name;
       setStatus("正在载入 easycore组件 的 textures/items PNG，用于后续像素去重。", "warn");
-      const textureIndex = await loadComponentTextureIndex(handle);
+      const textureIndex = await loadComponentTextureBundle(handle, true);
       const componentItemMaxNumber = await getComponentMaxItemNumberFromDirectory(handle);
+      revokeComponentTextureUrls();
       state.componentDirectory = handle;
       state.componentDirectoryName = handle.name;
       state.componentTextureHashes = textureIndex.hashes;
       state.componentTextureFileCount = textureIndex.fileCount;
+      state.componentTextureItems = textureIndex.browserItems;
+      state.selectedComponentTexturePath = textureIndex.browserItems.length > 0 ? textureIndex.browserItems[0].texturePath : "";
       state.componentItemMaxNumber = componentItemMaxNumber;
       state.componentItemMaxLoaded = true;
       renderAll();
@@ -121,6 +144,25 @@
       }
       setStatus("选择目录失败：" + getErrorMessage(error), "error");
     }
+  }
+
+  /**
+   * 切换到组件贴图阅览界面。
+   */
+  function handleShowTextureBrowser() {
+    if (!requireEditorUnlocked()) {
+      return;
+    }
+    state.viewMode = "browser";
+    renderAll();
+  }
+
+  /**
+   * 切换回物品编辑界面。
+   */
+  function handleShowEditor() {
+    state.viewMode = "editor";
+    renderAll();
   }
 
   /**
@@ -306,6 +348,25 @@
     try {
       await copyTextToClipboard(getOutputText(result));
       setStatus(getOutputCopyName() + " 已复制。", "ok");
+    } catch (error) {
+      setStatus("复制失败：" + getErrorMessage(error), "error");
+    }
+  }
+
+  /**
+   * 复制阅览器当前贴图的 NeigeItems 示例。
+   */
+  async function handleCopyBrowserNeige() {
+    if (!requireEditorUnlocked()) {
+      return;
+    }
+    const item = getSelectedComponentTextureItem();
+    if (item == null) {
+      return;
+    }
+    try {
+      await copyTextToClipboard(item.neigeYaml);
+      setStatus("当前贴图的 NeigeItems 示例已复制。", "ok");
     } catch (error) {
       setStatus("复制失败：" + getErrorMessage(error), "error");
     }
@@ -1249,6 +1310,7 @@
     renderMaterialGrid();
     renderOutput();
     renderDownloadList();
+    renderTextureBrowser();
   }
 
   /**
@@ -1290,7 +1352,9 @@
   function renderAccessState() {
     const unlocked = isEditorUnlocked();
     elements.entryGate.hidden = unlocked;
-    elements.workspace.hidden = !unlocked;
+    elements.workspace.hidden = !unlocked || state.viewMode !== "editor";
+    elements.textureBrowser.hidden = !unlocked || state.viewMode !== "browser";
+    elements.textureBrowserBtn.disabled = !unlocked;
     elements.importLegacyBtn.disabled = !unlocked;
     elements.addBlankBtn.disabled = !unlocked;
     elements.addSampleBtn.disabled = !unlocked;
@@ -1301,6 +1365,96 @@
     document.querySelectorAll("[data-output-tab]").forEach(function (button) {
       button.disabled = !unlocked;
     });
+  }
+
+  /**
+   * 渲染组件贴图阅览界面。
+   */
+  function renderTextureBrowser() {
+    elements.browserTextureCount.textContent = String(state.componentTextureItems.length);
+    renderTextureBrowserGrid();
+    renderTextureBrowserDetail();
+  }
+
+  /**
+   * 渲染组件贴图网格。
+   */
+  function renderTextureBrowserGrid() {
+    elements.browserTextureGrid.innerHTML = "";
+    if (!isEditorUnlocked()) {
+      const locked = document.createElement("div");
+      locked.className = "browser-grid-empty";
+      locked.textContent = "请先选择 easycore组件";
+      elements.browserTextureGrid.appendChild(locked);
+      return;
+    }
+    if (state.componentTextureItems.length === 0) {
+      const empty = document.createElement("div");
+      empty.className = "browser-grid-empty";
+      empty.textContent = "没有找到 textures/items 下的 PNG 贴图";
+      elements.browserTextureGrid.appendChild(empty);
+      return;
+    }
+    state.componentTextureItems.forEach(function (item) {
+      elements.browserTextureGrid.appendChild(createTextureBrowserTile(item));
+    });
+  }
+
+  /**
+   * 创建组件贴图网格按钮。
+   */
+  function createTextureBrowserTile(item) {
+    const tile = document.createElement("button");
+    tile.type = "button";
+    tile.className = "browser-texture-tile" + (item.texturePath === state.selectedComponentTexturePath ? " active" : "");
+    tile.title = item.texturePath;
+    tile.addEventListener("click", function () {
+      state.selectedComponentTexturePath = item.texturePath;
+      renderTextureBrowser();
+    });
+
+    const imageWrap = document.createElement("span");
+    imageWrap.className = "browser-texture-thumb";
+    const image = document.createElement("img");
+    image.src = item.objectUrl;
+    image.alt = "";
+    imageWrap.appendChild(image);
+
+    const text = document.createElement("span");
+    text.className = "browser-texture-text";
+    const name = document.createElement("span");
+    name.className = "browser-texture-name";
+    name.textContent = item.fileName;
+    const identifier = document.createElement("span");
+    identifier.className = "browser-texture-identifier";
+    identifier.textContent = item.identifier || "未绑定 identifier";
+    text.appendChild(name);
+    text.appendChild(identifier);
+
+    tile.appendChild(imageWrap);
+    tile.appendChild(text);
+    return tile;
+  }
+
+  /**
+   * 渲染组件贴图详情。
+   */
+  function renderTextureBrowserDetail() {
+    const item = getSelectedComponentTextureItem();
+    elements.browserDetail.hidden = item == null;
+    elements.browserEmpty.hidden = item != null;
+    if (item == null) {
+      elements.browserEmpty.textContent = isEditorUnlocked() ? "请选择一张组件贴图" : "请先选择 easycore组件";
+      elements.copyBrowserNeigeBtn.disabled = true;
+      return;
+    }
+    elements.browserPreviewImage.src = item.objectUrl;
+    elements.browserTexturePath.textContent = item.texturePath;
+    elements.browserIdentifier.textContent = item.identifier || "未找到";
+    elements.browserJavaIdentifier.textContent = item.javaIdentifier || "未找到";
+    elements.browserMaterial.textContent = item.material || "未找到";
+    elements.browserNeigePreview.textContent = item.neigeYaml;
+    elements.copyBrowserNeigeBtn.disabled = !isBrowserNeigeCopyable(item);
   }
 
   /**
@@ -1661,10 +1815,18 @@
    * 读取组件资源包里已有的 textures/items PNG 索引。
    */
   async function loadComponentTextureIndex(componentDirectory) {
+    return loadComponentTextureBundle(componentDirectory, false);
+  }
+
+  /**
+   * 读取组件贴图索引，按需生成阅览器贴图记录。
+   */
+  async function loadComponentTextureBundle(componentDirectory, includeBrowserItems) {
     const result = {
       hashes: new Map(),
       fileCount: 0,
-      warnings: []
+      warnings: [],
+      browserItems: []
     };
     const itemsDirectory = await getOptionalDirectoryHandle(componentDirectory, [
       "resource_packs",
@@ -1678,6 +1840,7 @@
     }
 
     const identifierMap = await readExistingTextureIdentifierMap(componentDirectory);
+    const javaIdentifierMap = includeBrowserItems ? await readBehaviorJavaIdentifierMap(componentDirectory) : new Map();
     const pngEntries = await readPngEntriesRecursive(itemsDirectory, []);
     for (const entry of pngEntries) {
       const file = await entry.handle.getFile();
@@ -1687,9 +1850,70 @@
         continue;
       }
       addComponentTextureRecord(result.hashes, makeComponentTextureRecord(entry.relativeParts, textureHash, identifierMap));
+      if (includeBrowserItems) {
+        result.browserItems.push(makeComponentTextureBrowserItem(entry.relativeParts, file, identifierMap, javaIdentifierMap));
+      }
       result.fileCount += 1;
     }
+    result.browserItems.sort(compareComponentTextureItems);
     return result;
+  }
+
+  /**
+   * 创建组件贴图阅览器里的单张贴图记录。
+   */
+  function makeComponentTextureBrowserItem(relativeParts, file, identifierMap, javaIdentifierMap) {
+    const texturePath = getTexturePathFromRelativeParts(relativeParts);
+    const identifier = identifierMap.get(texturePath) || "";
+    const javaIdentifier = identifier ? javaIdentifierMap.get(identifier) || "" : "";
+    const material = javaIdentifier ? getMaterialMap()[javaIdentifier] : null;
+    return {
+      objectUrl: URL.createObjectURL(file),
+      texturePath: texturePath,
+      relativePath: relativeParts.join("/"),
+      fileName: relativeParts.length > 0 ? relativeParts[relativeParts.length - 1] : file.name,
+      identifier: identifier,
+      javaIdentifier: javaIdentifier,
+      material: material == null ? "" : String(material),
+      neigeYaml: makeBrowserNeigeYaml(identifier, javaIdentifier, material)
+    };
+  }
+
+  /**
+   * 把 textures/items 下的相对路径转为 item_texture 路径。
+   */
+  function getTexturePathFromRelativeParts(relativeParts) {
+    const pathParts = relativeParts.slice();
+    const fileName = pathParts.pop() || "1.png";
+    const textureBase = fileName.replace(/\.png$/i, "");
+    return normalizeLegacyTexturePath(["textures", "items"].concat(pathParts, [textureBase]).join("/"));
+  }
+
+  /**
+   * 组件贴图按路径稳定排序。
+   */
+  function compareComponentTextureItems(left, right) {
+    return left.texturePath.localeCompare(right.texturePath);
+  }
+
+  /**
+   * 为阅览器生成单条 NeigeItems 示例。
+   */
+  function makeBrowserNeigeYaml(identifier, javaIdentifier, material) {
+    if (!identifier) {
+      return "无法生成 NeigeItems：item_texture.json 中没有找到这张贴图对应的 identifier。";
+    }
+    if (!javaIdentifier) {
+      return "无法生成 NeigeItems：netease_items_beh 中没有找到 " + identifier + " 对应的 java_identifier。";
+    }
+    if (material == null) {
+      return "无法生成 NeigeItems：" + javaIdentifier + " 没有 material 映射。";
+    }
+    return makeNeigeEntry({
+      displayName: identifierToFileBase(identifier),
+      material: material,
+      identifier: identifier
+    });
   }
 
   /**
@@ -1710,6 +1934,111 @@
       map.set(texturePath, normalizeIdentifier(identifier));
     });
     return map;
+  }
+
+  /**
+   * 从行为包读取 identifier 到 java_identifier 的映射。
+   */
+  async function readBehaviorJavaIdentifierMap(componentDirectory) {
+    const map = new Map();
+    const behaviorDirectory = await getOptionalDirectoryHandle(componentDirectory, [
+      "behavior_packs",
+      "easyCoreBehavior",
+      "netease_items_beh"
+    ]);
+    if (behaviorDirectory == null) {
+      return map;
+    }
+    const files = await readJsonTextFilesRecursive(behaviorDirectory);
+    files.forEach(function (file) {
+      addBehaviorJavaIdentifierFromText(map, file.text);
+    });
+    return map;
+  }
+
+  /**
+   * 递归读取目录中的 JSON 文本文件。
+   */
+  async function readJsonTextFilesRecursive(directory) {
+    const files = [];
+    try {
+      for await (const pair of directory.entries()) {
+        const name = pair[0];
+        const handle = pair[1];
+        if (handle.kind === "directory") {
+          const childFiles = await readJsonTextFilesRecursive(handle);
+          files.push.apply(files, childFiles);
+          continue;
+        }
+        if (handle.kind === "file" && name.toLowerCase().endsWith(".json")) {
+          const text = await readFileHandleText(handle);
+          if (text !== null) {
+            files.push({ name: name, text: text });
+          }
+        }
+      }
+    } catch (error) {
+      return files;
+    }
+    return files;
+  }
+
+  /**
+   * 从行为 JSON 文本里追加 java_identifier 映射。
+   */
+  function addBehaviorJavaIdentifierFromText(map, text) {
+    try {
+      const parsed = JSON.parse(text);
+      const entries = [];
+      collectBehaviorJavaIdentifierEntries(parsed, entries);
+      entries.forEach(function (entry) {
+        if (entry.identifier && entry.javaIdentifier && !map.has(entry.identifier)) {
+          map.set(entry.identifier, entry.javaIdentifier);
+        }
+      });
+    } catch (error) {
+      return;
+    }
+  }
+
+  /**
+   * 递归收集行为 JSON 中的 identifier 和 java_identifier。
+   */
+  function collectBehaviorJavaIdentifierEntries(node, entries) {
+    if (Array.isArray(node)) {
+      node.forEach(function (item) {
+        collectBehaviorJavaIdentifierEntries(item, entries);
+      });
+      return;
+    }
+    if (node == null || typeof node !== "object") {
+      return;
+    }
+    const itemNode = node["minecraft:item"];
+    if (itemNode != null && typeof itemNode === "object") {
+      const identifier = getBehaviorItemIdentifier(itemNode);
+      const javaIdentifier = normalizeJavaIdentifier(itemNode.java_identifier);
+      if (identifier && javaIdentifier) {
+        entries.push({
+          identifier: identifier,
+          javaIdentifier: javaIdentifier
+        });
+      }
+    }
+    Object.keys(node).forEach(function (key) {
+      collectBehaviorJavaIdentifierEntries(node[key], entries);
+    });
+  }
+
+  /**
+   * 从 minecraft:item 节点读取 identifier。
+   */
+  function getBehaviorItemIdentifier(itemNode) {
+    const description = itemNode.description;
+    if (description == null || typeof description !== "object") {
+      return "";
+    }
+    return normalizeIdentifier(description.identifier);
   }
 
   /**
@@ -2187,6 +2516,22 @@
   }
 
   /**
+   * 获取当前选中的组件贴图记录。
+   */
+  function getSelectedComponentTextureItem() {
+    return state.componentTextureItems.find(function (item) {
+      return item.texturePath === state.selectedComponentTexturePath;
+    }) || null;
+  }
+
+  /**
+   * 判断阅览器 NeigeItems 示例是否可复制。
+   */
+  function isBrowserNeigeCopyable(item) {
+    return Boolean(item.identifier && item.javaIdentifier && item.material);
+  }
+
+  /**
    * 获取 java_identifier 映射表。
    */
   function getMaterialMap() {
@@ -2499,6 +2844,20 @@
   }
 
   /**
+   * 释放组件贴图阅览器预览 URL。
+   */
+  function revokeComponentTextureUrls() {
+    state.componentTextureItems.forEach(function (item) {
+      if (item.objectUrl) {
+        URL.revokeObjectURL(item.objectUrl);
+        item.objectUrl = "";
+      }
+    });
+    state.componentTextureItems = [];
+    state.selectedComponentTexturePath = "";
+  }
+
+  /**
    * 释放下载链接 URL。
    */
   function revokeDownloadUrls() {
@@ -2521,6 +2880,7 @@
       renderAll: renderAll,
       setComponentTextureIndex: setComponentTextureIndexForTest,
       loadComponentTextureIndex: loadComponentTextureIndex,
+      loadComponentTextureBundle: loadComponentTextureBundle,
       getNextItemNumber: getNextItemNumber,
       getComponentMaxItemNumberFromDirectory: getComponentMaxItemNumberFromDirectory,
       calculateTextureHash: calculateTextureHash,
