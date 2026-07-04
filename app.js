@@ -48,6 +48,8 @@
     componentDirectoryName: "",
     componentTextureHashes: new Map(),
     componentTextureFileCount: 0,
+    componentItemMaxNumber: 0,
+    componentItemMaxLoaded: false,
     outputTab: "neige",
     generatedFiles: [],
     generatedArchive: null,
@@ -101,13 +103,16 @@
       elements.folderStatus.textContent = "正在读取组件已有贴图：" + handle.name;
       setStatus("正在载入 easycore组件 的 textures/items PNG，用于后续像素去重。", "warn");
       const textureIndex = await loadComponentTextureIndex(handle);
+      const componentItemMaxNumber = await getComponentMaxItemNumberFromDirectory(handle);
       state.componentDirectory = handle;
       state.componentDirectoryName = handle.name;
       state.componentTextureHashes = textureIndex.hashes;
       state.componentTextureFileCount = textureIndex.fileCount;
+      state.componentItemMaxNumber = componentItemMaxNumber;
+      state.componentItemMaxLoaded = true;
       renderAll();
       setStatus(
-        "组件目录已读取，已载入 " + textureIndex.fileCount + " 张 textures/items 现有贴图用于像素去重。",
+        "组件目录已读取，已载入 " + textureIndex.fileCount + " 张 textures/items 现有贴图用于像素去重，默认物品编号将从 item_" + (componentItemMaxNumber + 1) + " 开始。",
         textureIndex.warnings.length > 0 ? "warn" : "ok"
       );
     } catch (error) {
@@ -1021,7 +1026,7 @@
    * 创建一条物品记录。
    */
   async function createItemRecord(file) {
-    const itemIndex = getNextItemNumber();
+    const itemIndex = await getNextItemNumber();
     const textureIndex = await getNextTextureNumber(DEFAULT_FOLDER);
     const baseName = file == null ? String(textureIndex) : sanitizeTextureBaseName(file.name.replace(/\.png$/i, "")) || String(textureIndex);
     const identifier = DEFAULT_NAMESPACE + ":item_" + itemIndex;
@@ -1052,15 +1057,147 @@
   /**
    * 获取下一次默认 identifier 编号。
    */
-  function getNextItemNumber() {
-    const maxNumber = state.items.reduce(function (max, item) {
-      const match = normalizeIdentifier(item.identifier).match(/^ecore:item_(\d+)$/);
-      if (match == null) {
-        return max;
-      }
-      return Math.max(max, Number(match[1]));
-    }, 0);
+  async function getNextItemNumber() {
+    const localMax = getMaxDefaultItemNumber(state.items.map(function (item) {
+      return item.identifier;
+    }));
+    const componentMax = await getComponentMaxItemNumber();
+    const maxNumber = Math.max(localMax, componentMax);
     return maxNumber + 1;
+  }
+
+  /**
+   * 读取组件目录里已有 ecore:item_N 的最大编号。
+   */
+  async function getComponentMaxItemNumber() {
+    if (state.componentDirectory == null) {
+      return 0;
+    }
+    if (state.componentItemMaxLoaded) {
+      return state.componentItemMaxNumber;
+    }
+    const maxNumber = await getComponentMaxItemNumberFromDirectory(state.componentDirectory);
+    state.componentItemMaxNumber = maxNumber;
+    state.componentItemMaxLoaded = true;
+    return maxNumber;
+  }
+
+  /**
+   * 从指定组件目录扫描已有 ecore:item_N 的最大编号。
+   */
+  async function getComponentMaxItemNumberFromDirectory(componentDirectory) {
+    if (componentDirectory == null) {
+      return 0;
+    }
+    const identifiers = [];
+    const itemTexture = await readExistingItemTextureJson(componentDirectory);
+    if (itemTexture != null && typeof itemTexture === "object" && itemTexture.texture_data != null) {
+      identifiers.push.apply(identifiers, Object.keys(itemTexture.texture_data));
+    }
+    const behaviorDirectory = await getOptionalDirectoryHandle(componentDirectory, [
+      "behavior_packs",
+      "easyCoreBehavior",
+      "netease_items_beh"
+    ]);
+    const resourceDirectory = await getOptionalDirectoryHandle(componentDirectory, [
+      "resource_packs",
+      "easyCoreResource",
+      "netease_items_res"
+    ]);
+    if (behaviorDirectory != null) {
+      identifiers.push.apply(identifiers, await readJsonIdentifiersRecursive(behaviorDirectory));
+    }
+    if (resourceDirectory != null) {
+      identifiers.push.apply(identifiers, await readJsonIdentifiersRecursive(resourceDirectory));
+    }
+    return getMaxDefaultItemNumber(identifiers);
+  }
+
+  /**
+   * 递归读取 JSON 文件里的 identifier 字段。
+   */
+  async function readJsonIdentifiersRecursive(directory) {
+    const identifiers = [];
+    try {
+      for await (const pair of directory.entries()) {
+        const name = pair[0];
+        const handle = pair[1];
+        if (handle.kind === "directory") {
+          identifiers.push.apply(identifiers, await readJsonIdentifiersRecursive(handle));
+          continue;
+        }
+        if (handle.kind === "file" && name.toLowerCase().endsWith(".json")) {
+          const text = await readFileHandleText(handle);
+          if (text !== null) {
+            identifiers.push.apply(identifiers, parseJsonIdentifiers(text));
+          }
+        }
+      }
+    } catch (error) {
+      return identifiers;
+    }
+    return identifiers;
+  }
+
+  /**
+   * 从 JSON 文本提取 identifier 字段。
+   */
+  function parseJsonIdentifiers(text) {
+    try {
+      const parsed = JSON.parse(text);
+      const identifiers = [];
+      collectIdentifierValues(parsed, identifiers);
+      return identifiers;
+    } catch (error) {
+      return [];
+    }
+  }
+
+  /**
+   * 递归收集对象里的 identifier 字符串。
+   */
+  function collectIdentifierValues(node, identifiers) {
+    if (Array.isArray(node)) {
+      node.forEach(function (item) {
+        collectIdentifierValues(item, identifiers);
+      });
+      return;
+    }
+    if (node == null || typeof node !== "object") {
+      return;
+    }
+    Object.keys(node).forEach(function (key) {
+      const value = node[key];
+      if (key === "identifier" && typeof value === "string") {
+        identifiers.push(value);
+      }
+      collectIdentifierValues(value, identifiers);
+    });
+  }
+
+  /**
+   * 获取 identifier 列表中默认 ecore:item_N 的最大编号。
+   */
+  function getMaxDefaultItemNumber(identifiers) {
+    return identifiers.reduce(function (max, identifier) {
+      return Math.max(max, getDefaultItemNumber(identifier));
+    }, 0);
+  }
+
+  /**
+   * 从默认 identifier 中提取编号。
+   */
+  function getDefaultItemNumber(identifier) {
+    const normalized = normalizeIdentifier(identifier);
+    const prefix = DEFAULT_NAMESPACE + ":item_";
+    if (normalized.indexOf(prefix) !== 0) {
+      return 0;
+    }
+    const numberPart = normalized.slice(prefix.length);
+    if (!/^\d+$/.test(numberPart)) {
+      return 0;
+    }
+    return Number(numberPart);
   }
 
   /**
@@ -2384,6 +2521,8 @@
       renderAll: renderAll,
       setComponentTextureIndex: setComponentTextureIndexForTest,
       loadComponentTextureIndex: loadComponentTextureIndex,
+      getNextItemNumber: getNextItemNumber,
+      getComponentMaxItemNumberFromDirectory: getComponentMaxItemNumberFromDirectory,
       calculateTextureHash: calculateTextureHash,
       createSamplePngFile: createSamplePngFile
     };
