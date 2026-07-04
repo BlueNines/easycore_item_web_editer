@@ -1,0 +1,8 @@
+__*validation*.html
+.DS_Store
+Thumbs.db
+*.zip
+generated/
+items/**
+定义物品最简示例/
+通过Textures和NeigeItems和easycore资源包转换为导出配置/

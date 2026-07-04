@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>EasyCore 物品生成器</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div>
+        <h1>EasyCore 物品生成器</h1>
+        <p id="folderStatus">未选择组件目录</p>
+      </div>
+      <div class="toolbar">
+        <button id="pickFolderBtn" type="button" title="只读读取 easycore组件，用于合并已有 item_texture，不会写入源文件">选择 easycore组件</button>
+        <button id="importLegacyBtn" type="button" title="从已有配置反向生成可编辑物品">导入旧配置</button>
+        <button id="addBlankBtn" type="button" title="创建一个没有 PNG 的物品记录">新建空物品</button>
+        <button id="addSampleBtn" type="button" title="给当前物品填入一个测试 PNG">示例 PNG</button>
+        <button id="exportBtn" type="button" class="primary" title="把行为包、资源包、item_texture、贴图和 NeigeItems 配置打包为 ZIP 下载，不修改源文件">导出</button>
+      </div>
+    </header>
+
+    <main id="entryGate" class="entry-gate">
+      <div class="entry-gate-inner">
+        <h2>请先选择 easycore组件</h2>
+        <p>选择后才会进入物品编辑器。目录只读读取，用于合并已有 item_texture，不会写入源文件。</p>
+      </div>
+    </main>
+
+    <main id="workspace" class="workspace" hidden>
+      <section class="panel item-panel">
+        <div class="panel-head">
+          <h2>物品</h2>
+          <span id="itemCount">0</span>
+        </div>
+        <div id="itemList" class="item-list"></div>
+      </section>
+
+      <section class="panel editor-panel">
+        <div class="panel-head">
+          <h2>编辑</h2>
+          <button id="removeItemBtn" type="button" class="danger ghost" title="删除当前选中的物品记录">删除</button>
+        </div>
+
+        <div id="emptyEditor" class="empty-state">添加物品后开始编辑</div>
+
+        <form id="itemForm" class="item-form" hidden>
+          <div class="required-fields">
+            <div class="form-section-title">必填项</div>
+            <div class="required-field-grid">
+              <div class="field required-field">
+                <label class="field-label" for="displayNameInput">
+                  <span>NeigeItems 名称</span>
+                  <span class="required-mark">必填</span>
+                </label>
+                <input id="displayNameInput" type="text" autocomplete="off" required>
+                <div class="field-hint">写入 NeigeItems 配置的物品键名。</div>
+              </div>
+              <div class="field required-field">
+                <label class="field-label" for="identifierInput">
+                  <span>identifier</span>
+                  <span class="required-mark">必填</span>
+                </label>
+                <input id="identifierInput" type="text" autocomplete="off" spellcheck="false" required>
+                <div class="field-hint">网易行为包和资源包使用的物品 ID。</div>
+              </div>
+              <div class="field required-field">
+                <label class="field-label" for="javaIdentifierInput">
+                  <span>java_identifier</span>
+                  <span class="required-mark">必填</span>
+                </label>
+                <input id="javaIdentifierInput" type="text" autocomplete="off" spellcheck="false" required>
+                <div class="field-hint">决定服务端 material 映射和原版材质图标。</div>
+              </div>
+            </div>
+          </div>
+
+          <div id="materialGrid" class="material-grid"></div>
+
+          <div class="form-section-title texture-section-title">贴图设置</div>
+          <div class="preview-row texture-row">
+            <div class="texture-preview">
+              <img id="previewImage" alt="">
+              <div id="dropZone" class="drop-zone texture-drop-zone">
+                <input id="fileInput" type="file" accept="image/png" title="选择当前物品使用的 PNG 贴图">
+                <strong>选择贴图</strong>
+                <span>PNG / 导出到资源包 textures/items</span>
+              </div>
+            </div>
+            <div class="field-grid texture-field-grid">
+              <div class="field">
+                <label for="folderInput">贴图文件夹</label>
+                <input id="folderInput" type="text" autocomplete="off" spellcheck="false">
+                <div class="field-hint">资源包 textures/items 下的子目录。</div>
+              </div>
+              <div class="field">
+                <label for="textureNameInput">贴图文件名</label>
+                <input id="textureNameInput" type="text" autocomplete="off" spellcheck="false">
+                <div class="field-hint">导出的 PNG 文件名，最终会写入 item_texture。</div>
+              </div>
+            </div>
+          </div>
+        </form>
+      </section>
+
+      <section class="panel output-panel">
+        <div class="panel-head">
+          <h2>输出</h2>
+        </div>
+        <div id="validationBox" class="validation-box"></div>
+        <div class="output-tabs">
+          <button type="button" data-output-tab="neige" class="active" title="预览 NeigeItems 配置内容">NeigeItems</button>
+          <button type="button" data-output-tab="texture" title="预览资源包 textures/item_texture.json">item_texture</button>
+          <button type="button" data-output-tab="files" title="查看导出会生成的文件路径">文件</button>
+        </div>
+        <div class="output-preview-shell">
+          <div class="copy-output-bar">
+            <button id="copyNeigeBtn" type="button" class="copy-output-btn" title="复制当前 NeigeItems 配置文本">复制 NeigeItems</button>
+          </div>
+          <pre id="outputPreview" class="output-preview"></pre>
+        </div>
+        <div id="downloadList" class="download-list"></div>
+      </section>
+    </main>
+  </div>
+
+  <script src="./java_identifier_mapping.js"></script>
+  <script src="./java_identifier_textures.js"></script>
+  <script src="./app.js"></script>
+</body>
+</html>
