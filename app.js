@@ -131,6 +131,7 @@
     }
     try {
       const handle = await window.showDirectoryPicker({ mode: "read" });
+      setStatus("正在导入旧配置：" + handle.name, "warn");
       const result = await importLegacyDirectory(handle);
       renderAll();
       setStatus(formatLegacyImportSummary(result), result.items.length > 0 ? "ok" : "warn");
@@ -526,11 +527,41 @@
    * 从旧配置目录导入物品生成记录。
    */
   async function importLegacyDirectory(rootHandle) {
-    const handles = await findLegacyConfigHandles(rootHandle);
+    const legacyRoot = await findLegacyConfigRootHandle(rootHandle);
+    const handles = await findLegacyConfigHandles(legacyRoot);
     const sources = await readLegacySourcesFromHandles(handles);
     const result = await importLegacySources(sources);
     replaceItems(result.items);
     return result;
+  }
+
+  /**
+   * 查找真正包含旧配置三件套的目录。
+   */
+  async function findLegacyConfigRootHandle(rootHandle) {
+    if (await hasLegacyConfigDirectories(rootHandle)) {
+      return rootHandle;
+    }
+    for await (const pair of rootHandle.entries()) {
+      const handle = pair[1];
+      if (handle.kind !== "directory") {
+        continue;
+      }
+      if (await hasLegacyConfigDirectories(handle)) {
+        return handle;
+      }
+    }
+    return rootHandle;
+  }
+
+  /**
+   * 判断目录是否包含旧配置需要的三个目录。
+   */
+  async function hasLegacyConfigDirectories(rootHandle) {
+    const texturesDirectory = await getOptionalDirectoryHandle(rootHandle, ["Textures配置"]);
+    const neigeDirectory = await getOptionalDirectoryHandle(rootHandle, ["NeigeItems配置"]);
+    const resourceDirectory = await getOptionalDirectoryHandle(rootHandle, ["easycore资源包", "easyCoreResource"]);
+    return texturesDirectory != null && neigeDirectory != null && resourceDirectory != null;
   }
 
   /**
@@ -900,21 +931,39 @@
    */
   async function readTextFilesRecursive(directory, basePath) {
     const files = [];
-    for await (const pair of directory.entries()) {
-      const name = pair[0];
-      const handle = pair[1];
-      const currentPath = basePath ? basePath + "/" + name : name;
-      if (handle.kind === "directory") {
-        const childFiles = await readTextFilesRecursive(handle, currentPath);
-        files.push.apply(files, childFiles);
-        continue;
+    try {
+      for await (const pair of directory.entries()) {
+        const name = pair[0];
+        const handle = pair[1];
+        const currentPath = basePath ? basePath + "/" + name : name;
+        if (handle.kind === "directory") {
+          const childFiles = await readTextFilesRecursive(handle, currentPath);
+          files.push.apply(files, childFiles);
+          continue;
+        }
+        if (handle.kind === "file" && name.toLowerCase().endsWith(".yml")) {
+          const text = await readFileHandleText(handle);
+          if (text !== null) {
+            files.push({ path: currentPath, text: text });
+          }
+        }
       }
-      if (handle.kind === "file" && name.toLowerCase().endsWith(".yml")) {
-        const file = await handle.getFile();
-        files.push({ path: currentPath, text: await file.text() });
-      }
+    } catch (error) {
+      return files;
     }
     return files;
+  }
+
+  /**
+   * 读取文件句柄文本，文件失效时返回 null。
+   */
+  async function readFileHandleText(handle) {
+    try {
+      const file = await handle.getFile();
+      return file.text();
+    } catch (error) {
+      return null;
+    }
   }
 
   /**
@@ -1736,7 +1785,7 @@
    */
   async function getOptionalDirectoryHandle(root, pathParts) {
     try {
-      return getDirectoryHandle(root, pathParts);
+      return await getDirectoryHandle(root, pathParts);
     } catch (error) {
       return null;
     }
@@ -2330,6 +2379,7 @@
       state: state,
       addMockItem: addMockItem,
       buildExportPlan: buildExportPlan,
+      importLegacyDirectory: importLegacyDirectory,
       importLegacySources: importLegacySourcesForTest,
       renderAll: renderAll,
       setComponentTextureIndex: setComponentTextureIndexForTest,
