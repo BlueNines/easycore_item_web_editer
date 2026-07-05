@@ -10,6 +10,8 @@
   const ZIP_MAX_UINT32 = 0xffffffff;
   const ZIP_MAX_ENTRIES = 0xffff;
   const EASYCORE_EXPORT_ROOT = ["generated", "easycore"];
+  const IDENTIFIER_SEGMENT_PATTERN = "[a-z]{2,}(?:_[a-z]{2,})*(?:_?[0-9]+)?";
+  const IDENTIFIER_PATTERN = new RegExp("^" + IDENTIFIER_SEGMENT_PATTERN + ":" + IDENTIFIER_SEGMENT_PATTERN + "$");
   const CRC32_TABLE = createCrc32Table();
 
   const elements = {
@@ -1816,7 +1818,7 @@
 
     exportItems.forEach(function (normalized) {
       if (!isValidIdentifier(normalized.identifier)) {
-        errors.push(normalized.displayName + " 的 identifier 格式无效。");
+        errors.push(normalized.displayName + " 的 identifier 格式无效，应类似 ecore:item_1，冒号两侧都必须以至少 2 个英文字母开头。");
       }
       if (normalized.writeDefinition && seenIdentifiers.has(normalized.identifier)) {
         errors.push(normalized.identifier + " 重复。");
@@ -2808,7 +2810,7 @@
    * 校验 identifier 格式。
    */
   function isValidIdentifier(identifier) {
-    return /^[a-z0-9_.-]+:[a-z0-9_./-]+$/.test(identifier);
+    return IDENTIFIER_PATTERN.test(identifier);
   }
 
   /**

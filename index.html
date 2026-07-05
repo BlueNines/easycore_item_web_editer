@@ -66,8 +66,8 @@
                   <span>identifier</span>
                   <span class="required-mark">必填</span>
                 </label>
-                <input id="identifierInput" type="text" autocomplete="off" spellcheck="false" required>
-                <div class="field-hint">网易行为包和资源包使用的物品 ID。</div>
+                <input id="identifierInput" type="text" autocomplete="off" spellcheck="false" pattern="[A-Za-z]{2,}(?:_[A-Za-z]{2,})*(?:_?[0-9]+)?:[A-Za-z]{2,}(?:_[A-Za-z]{2,})*(?:_?[0-9]+)?" title="格式：英文至少 2 位开头，可带下划线英文段和末尾数字，例如 ecore:item_1" required>
+                <div class="field-hint">格式如 ecore:item_1，冒号两侧都必须以至少 2 个英文字母开头。</div>
               </div>
               <div class="field required-field">
                 <label class="field-label" for="javaIdentifierInput">
